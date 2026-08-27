@@ -12,16 +12,8 @@ type UploadedFileState = {
   fileText: string | null
 }
 
-const META_KEY = 'uploadedDatasetMeta'
 const IDB_DB_NAME = 'furnace-db'
 const IDB_STORE = 'files'
-const IDB_KEY = 'uploadedFile'
-
-const state = useState<UploadedFileState>('uploaded-file-state', () => ({
-  fileMeta: null,
-  hasFile: false,
-  fileText: null,
-}))
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -70,7 +62,22 @@ async function idbDel(key: string) {
   })
 }
 
-export default function useUploadedFile() {
+/**
+ * Manages a single uploaded CSV file, persisted in IndexedDB (content) and
+ * localStorage (metadata). `slot` allows multiple independent uploads to
+ * coexist (e.g. raw process signals vs. anomaly results), each keyed
+ * separately. The default slot keeps the original, unsuffixed storage keys.
+ */
+export default function useUploadedFile(slot: string = 'dataset') {
+  const META_KEY = slot === 'dataset' ? 'uploadedDatasetMeta' : `uploadedDatasetMeta:${slot}`
+  const IDB_KEY = slot === 'dataset' ? 'uploadedFile' : `uploadedFile:${slot}`
+
+  const state = useState<UploadedFileState>(`uploaded-file-state-${slot}`, () => ({
+    fileMeta: null,
+    hasFile: false,
+    fileText: null
+  }))
+
   const fileMeta = computed(() => state.value.fileMeta)
   const hasFile = computed(() => state.value.hasFile)
   const fileText = computed(() => state.value.fileText)
@@ -84,7 +91,7 @@ export default function useUploadedFile() {
     const meta = {
       name: file.name,
       size: file.size,
-      uploadedAt: new Date().toISOString(),
+      uploadedAt: new Date().toISOString()
     }
 
     localStorage.setItem(META_KEY, JSON.stringify(meta))
@@ -92,7 +99,7 @@ export default function useUploadedFile() {
       ...state.value,
       fileMeta: meta,
       hasFile: true,
-      fileText: text,
+      fileText: text
     }
   }
 
@@ -103,7 +110,7 @@ export default function useUploadedFile() {
         ...state.value,
         fileMeta: null,
         hasFile: false,
-        fileText: null,
+        fileText: null
       }
       return
     }
@@ -113,20 +120,20 @@ export default function useUploadedFile() {
       state.value = {
         ...state.value,
         fileMeta: parsedMeta,
-        hasFile: true,
+        hasFile: true
       }
     } catch {
       state.value = {
         ...state.value,
         fileMeta: null,
-        hasFile: false,
+        hasFile: false
       }
     }
 
     const persistedText = await idbGet(IDB_KEY)
     state.value = {
       ...state.value,
-      fileText: typeof persistedText === 'string' ? persistedText : null,
+      fileText: typeof persistedText === 'string' ? persistedText : null
     }
   }
 
@@ -134,7 +141,7 @@ export default function useUploadedFile() {
     const persistedText = await idbGet(IDB_KEY)
     state.value = {
       ...state.value,
-      fileText: typeof persistedText === 'string' ? persistedText : null,
+      fileText: typeof persistedText === 'string' ? persistedText : null
     }
 
     return typeof persistedText === 'string' ? persistedText : null
@@ -147,7 +154,7 @@ export default function useUploadedFile() {
       ...state.value,
       fileMeta: null,
       hasFile: false,
-      fileText: null,
+      fileText: null
     }
   }
 
@@ -158,6 +165,6 @@ export default function useUploadedFile() {
     setFile,
     loadFromStorage,
     getFileData,
-    clear,
+    clear
   }
 }
