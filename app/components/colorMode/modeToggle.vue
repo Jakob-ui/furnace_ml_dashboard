@@ -1,11 +1,27 @@
 <script setup lang="ts">
-const toggleColorMode = () => {
-    const colorMode = useColorMode()
-    colorMode.preference = colorMode.value === 'dark' ? 'light' : 'dark'
+const colorMode = useColorMode()
+
+function toggle() {
+  colorMode.preference = colorMode.value === 'dark' ? 'light' : 'dark'
 }
 </script>
 
 <template>
-    <UButton icon="i-heroicons-moon" :icon-active="false" color="neutral" variant="ghost" aria-label="Toggle dark mode"
-        @click="toggleColorMode" />
+  <ClientOnly>
+    <UButton
+      :icon="colorMode.value === 'dark' ? 'i-lucide-moon' : 'i-lucide-sun'"
+      color="neutral"
+      variant="ghost"
+      aria-label="Hell/Dunkel umschalten"
+      @click="toggle"
+    />
+    <template #fallback>
+      <UButton
+        icon="i-lucide-sun"
+        color="neutral"
+        variant="ghost"
+        aria-label="Hell/Dunkel umschalten"
+      />
+    </template>
+  </ClientOnly>
 </template>

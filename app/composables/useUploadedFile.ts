@@ -9,19 +9,10 @@ type FileMeta = {
 type UploadedFileState = {
   fileMeta: FileMeta
   hasFile: boolean
-  fileText: string | null
 }
 
-const META_KEY = 'uploadedDatasetMeta'
 const IDB_DB_NAME = 'furnace-db'
 const IDB_STORE = 'files'
-const IDB_KEY = 'uploadedFile'
-
-const state = useState<UploadedFileState>('uploaded-file-state', () => ({
-  fileMeta: null,
-  hasFile: false,
-  fileText: null,
-}))
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -41,19 +32,16 @@ async function idbPut(key: string, value: unknown) {
   const db = await openDb()
   return new Promise<void>((resolve, reject) => {
     const tx = db.transaction(IDB_STORE, 'readwrite')
-    const store = tx.objectStore(IDB_STORE)
-    const req = store.put(value, key)
-    req.onsuccess = () => resolve()
-    req.onerror = () => reject(req.error)
+    tx.objectStore(IDB_STORE).put(value, key)
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
   })
 }
 
 async function idbGet(key: string) {
   const db = await openDb()
   return new Promise<unknown>((resolve, reject) => {
-    const tx = db.transaction(IDB_STORE, 'readonly')
-    const store = tx.objectStore(IDB_STORE)
-    const req = store.get(key)
+    const req = db.transaction(IDB_STORE, 'readonly').objectStore(IDB_STORE).get(key)
     req.onsuccess = () => resolve(req.result)
     req.onerror = () => reject(req.error)
   })
@@ -63,101 +51,68 @@ async function idbDel(key: string) {
   const db = await openDb()
   return new Promise<void>((resolve, reject) => {
     const tx = db.transaction(IDB_STORE, 'readwrite')
-    const store = tx.objectStore(IDB_STORE)
-    const req = store.delete(key)
-    req.onsuccess = () => resolve()
-    req.onerror = () => reject(req.error)
+    tx.objectStore(IDB_STORE).delete(key)
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
   })
 }
 
-export default function useUploadedFile() {
+/**
+ * Verwaltet die eine hochgeladene CSV. Der Dateiinhalt liegt als `Blob` in
+ * IndexedDB (auch sehr große Dateien, kein Riesen-String), die Metadaten in
+ * localStorage — ein Reload verliert die Datei nicht.
+ */
+export default function useUploadedFile(slot: string = 'dataset') {
+  const META_KEY = slot === 'dataset' ? 'uploadedDatasetMeta' : `uploadedDatasetMeta:${slot}`
+  const IDB_KEY = slot === 'dataset' ? 'uploadedFile' : `uploadedFile:${slot}`
+
+  const state = useState<UploadedFileState>(`uploaded-file-state-${slot}`, () => ({
+    fileMeta: null,
+    hasFile: false
+  }))
+
   const fileMeta = computed(() => state.value.fileMeta)
   const hasFile = computed(() => state.value.hasFile)
-  const fileText = computed(() => state.value.fileText)
 
   async function setFile(file: File) {
     if (!file) return
-
-    const text = await file.text()
-    await idbPut(IDB_KEY, text)
-
-    const meta = {
-      name: file.name,
-      size: file.size,
-      uploadedAt: new Date().toISOString(),
-    }
-
+    await idbPut(IDB_KEY, file)
+    const meta = { name: file.name, size: file.size, uploadedAt: new Date().toISOString() }
     localStorage.setItem(META_KEY, JSON.stringify(meta))
-    state.value = {
-      ...state.value,
-      fileMeta: meta,
-      hasFile: true,
-      fileText: text,
-    }
+    state.value = { fileMeta: meta, hasFile: true }
   }
 
   async function loadFromStorage() {
     const raw = localStorage.getItem(META_KEY)
     if (!raw) {
-      state.value = {
-        ...state.value,
-        fileMeta: null,
-        hasFile: false,
-        fileText: null,
-      }
+      state.value = { fileMeta: null, hasFile: false }
       return
     }
-
     try {
-      const parsedMeta = JSON.parse(raw) as FileMeta
-      state.value = {
-        ...state.value,
-        fileMeta: parsedMeta,
-        hasFile: true,
-      }
+      state.value = { fileMeta: JSON.parse(raw) as FileMeta, hasFile: true }
     } catch {
-      state.value = {
-        ...state.value,
-        fileMeta: null,
-        hasFile: false,
-      }
-    }
-
-    const persistedText = await idbGet(IDB_KEY)
-    state.value = {
-      ...state.value,
-      fileText: typeof persistedText === 'string' ? persistedText : null,
+      state.value = { fileMeta: null, hasFile: false }
     }
   }
 
-  async function getFileData() {
-    const persistedText = await idbGet(IDB_KEY)
-    state.value = {
-      ...state.value,
-      fileText: typeof persistedText === 'string' ? persistedText : null,
-    }
-
-    return typeof persistedText === 'string' ? persistedText : null
+  /** Den gespeicherten Blob holen (zum Parsen). */
+  async function getBlob(): Promise<Blob | null> {
+    const value = await idbGet(IDB_KEY)
+    return value instanceof Blob ? value : null
   }
 
   async function clear() {
     await idbDel(IDB_KEY)
     localStorage.removeItem(META_KEY)
-    state.value = {
-      ...state.value,
-      fileMeta: null,
-      hasFile: false,
-      fileText: null,
-    }
+    state.value = { fileMeta: null, hasFile: false }
   }
 
   return {
     fileMeta,
     hasFile,
-    fileText,
     setFile,
     loadFromStorage,
-    getFileData,
-    clear,
+    getBlob,
+    clear
   }
 }
