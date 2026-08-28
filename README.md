@@ -258,3 +258,5 @@ docker run --rm -p 3000:3000 furnace-dashboard
 ```
 
 Danach ebenfalls unter `http://localhost:3000`.
+
+Viel Spaß damit :)
