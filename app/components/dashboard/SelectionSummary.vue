@@ -1,28 +1,33 @@
 <script setup lang="ts">
-import { MODEL_OPTIONS, PHASE_OPTIONS } from '~/types/furnace'
+import useFurnaceData, { MODEL_LABELS, PHASE_LABELS } from '~/composables/useFurnaceData'
 
-const { selection } = useFurnaceSelection()
+const { isAnalysis, hasPhases } = useFurnaceData()
+const { model, zone, phase } = useFurnaceSelection()
 
-const modelLabel = computed(() => MODEL_OPTIONS.find(option => option.key === selection.value.model)?.label ?? selection.value.model)
-const phaseLabel = computed(() => PHASE_OPTIONS.find(option => option.key === selection.value.phase)?.label ?? selection.value.phase)
+const modelLabel = computed(() => (model.value ? MODEL_LABELS[model.value] : null))
+const phaseLabel = computed(() => (phase.value === 'all' ? 'Alle Phasen' : PHASE_LABELS[phase.value]))
 </script>
 
 <template>
   <div class="flex flex-wrap items-center gap-2">
-    <span class="text-sm text-muted">Current selection:</span>
+    <span class="text-sm text-muted">Aktuelle Auswahl:</span>
+
     <UBadge
+      v-if="isAnalysis && modelLabel"
       color="primary"
       variant="subtle"
       icon="i-lucide-brain-circuit"
       :label="modelLabel"
     />
     <UBadge
+      v-if="zone != null"
       color="neutral"
       variant="subtle"
       icon="i-lucide-flame"
-      :label="`Zone ${selection.zone}`"
+      :label="`Zone ${zone}`"
     />
     <UBadge
+      v-if="hasPhases"
       color="neutral"
       variant="subtle"
       icon="i-lucide-thermometer"

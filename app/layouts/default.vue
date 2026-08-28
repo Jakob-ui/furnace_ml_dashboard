@@ -1,7 +1,15 @@
 <script setup lang="ts">
 import FurnaceSidebar from '~/components/sidebar/FurnaceSidebar.vue'
 
-const open = ref(false)
+const open = useState<boolean>('dashboard-sidebar-open', () => false)
+
+const { init } = useFurnaceDataset()
+const { hydrate } = useFurnaceSelection()
+
+onMounted(async () => {
+  hydrate()
+  await init()
+})
 </script>
 
 <template>
@@ -18,11 +26,13 @@ const open = ref(false)
     >
       <template #header>
         <p class="text-sm font-semibold text-highlighted">
-          Furnace Analysis
+          Stoßofen-Analyse
         </p>
       </template>
 
-      <FurnaceSidebar />
+      <template #default="{ collapsed }">
+        <FurnaceSidebar :collapsed="collapsed" />
+      </template>
     </UDashboardSidebar>
 
     <slot />

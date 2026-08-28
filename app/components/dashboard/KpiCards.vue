@@ -1,71 +1,33 @@
 <script setup lang="ts">
-const { events, scorePoints, kind, hasFile: hasResults } = useAnomalyResults()
-const { timeRange, hasFile: hasSignals } = useFurnaceSignals()
+import useFurnaceData from '~/composables/useFurnaceData'
+import { formatDuration, formatInteger, formatPercent } from '~/utils/format'
 
-const hasData = computed(() => hasResults.value || hasSignals.value)
+const { isAnalysis, kpis } = useFurnaceData()
+const { model, zone, rowFilter } = useFurnaceSelection()
 
-const totalEvents = computed(() => events.value.length)
-
-const totalAnomalySeconds = computed(() => events.value.reduce((sum, event) => sum + event.durationSeconds, 0))
-
-// Prefer the exact ratio from per-timestamp data; fall back to
-// event-duration / signal-time-range when only event-level data is available.
-const anomalyPercentage = computed<number | null>(() => {
-  if (kind.value === 'points' && scorePoints.value.length) {
-    const anomalousCount = scorePoints.value.filter(point => point.isAnom).length
-    return (anomalousCount / scorePoints.value.length) * 100
-  }
-
-  if (timeRange.value) {
-    const totalRangeSeconds = (timeRange.value[1].getTime() - timeRange.value[0].getTime()) / 1000
-    if (totalRangeSeconds > 0) {
-      return (totalAnomalySeconds.value / totalRangeSeconds) * 100
-    }
-  }
-
-  return null
+const stats = computed(() => {
+  if (!isAnalysis.value || model.value == null || zone.value == null) return null
+  return kpis(model.value, zone.value, rowFilter.value)
 })
 
-function formatDuration(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds <= 0) return '0s'
-
-  const totalMinutes = Math.floor(seconds / 60)
-  const hours = Math.floor(totalMinutes / 60)
-  const minutes = totalMinutes % 60
-  const secs = Math.round(seconds % 60)
-
-  if (hours > 0) return `${hours}h ${minutes}m`
-  if (minutes > 0) return `${minutes}m ${secs}s`
-  return `${secs}s`
-}
+const cards = computed(() => {
+  if (!stats.value) return []
+  return [
+    { label: 'Events gesamt', value: formatInteger(stats.value.totalEvents) },
+    { label: 'Anomalieanteil', value: formatPercent(stats.value.anomalyRatio) },
+    { label: 'Anomaliedauer', value: formatDuration(stats.value.anomalySeconds) }
+  ]
+})
 </script>
 
 <template>
-  <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
-    <UCard :ui="{ body: 'flex flex-col gap-1' }">
-      <p class="text-xs text-muted uppercase">
-        Total Events
+  <div v-if="stats" class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+    <UCard v-for="card in cards" :key="card.label" :ui="{ body: 'flex flex-col gap-1' }">
+      <p class="text-xs font-semibold tracking-wide text-muted uppercase">
+        {{ card.label }}
       </p>
       <p class="text-2xl font-semibold text-highlighted">
-        {{ hasData ? totalEvents : '—' }}
-      </p>
-    </UCard>
-
-    <UCard :ui="{ body: 'flex flex-col gap-1' }">
-      <p class="text-xs text-muted uppercase">
-        Anomaly Percentage
-      </p>
-      <p class="text-2xl font-semibold text-highlighted">
-        {{ anomalyPercentage !== null ? `${anomalyPercentage.toFixed(2)}%` : '—' }}
-      </p>
-    </UCard>
-
-    <UCard :ui="{ body: 'flex flex-col gap-1' }">
-      <p class="text-xs text-muted uppercase">
-        Total Anomaly Duration
-      </p>
-      <p class="text-2xl font-semibold text-highlighted">
-        {{ hasData ? formatDuration(totalAnomalySeconds) : '—' }}
+        {{ card.value }}
       </p>
     </UCard>
   </div>

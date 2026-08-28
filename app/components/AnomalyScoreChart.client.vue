@@ -1,78 +1,160 @@
 <script setup lang="ts">
-import { format } from 'date-fns'
-import { VisAxis, VisCrosshair, VisLine, VisScatter, VisTooltip, VisXYContainer } from '@unovis/vue'
+import { VisArea, VisAxis, VisCrosshair, VisLine, VisPlotband, VisPlotbandSelectors, VisPlotline, VisTooltip, VisXYContainer } from '@unovis/vue'
+import useFurnaceData, { type FurnaceEvent } from '~/composables/useFurnaceData'
+import { formatClock, formatNumber } from '~/utils/format'
 
-type ScoreRow = { time: number, score: number }
+type ScoreRow = { x: number, score: number | null }
 
 const cardRef = useTemplateRef<HTMLElement | null>('cardRef')
 const { width } = useElementSize(cardRef)
 
-const { scorePoints, events, kind } = useAnomalyResults()
-const { zoomDomain } = useChartInteraction()
+const data = useFurnaceData()
+const { isAnalysis, hasScores } = data
+const { model, zone, rowFilter } = useFurnaceSelection()
+const { selectedEventId, xDomain, isZoomed, selectEvent, reset } = useChartInteraction()
 
-const lineData = computed<ScoreRow[]>(() =>
-  scorePoints.value.map(point => ({ time: point.time.getTime(), score: point.score }))
+const active = computed(() => isAnalysis.value && model.value != null && zone.value != null)
+
+const threshold = computed(() =>
+  active.value ? data.flagThreshold(model.value!, zone.value!) : 0.5
 )
 
-const eventScoreData = computed<ScoreRow[]>(() =>
-  events.value
-    .filter(event => event.scoreNormalized !== null || event.scoreRaw !== null)
-    .map(event => ({ time: event.centerTime.getTime(), score: (event.scoreNormalized ?? event.scoreRaw)! }))
-)
+const scoreData = computed<ScoreRow[]>(() => {
+  if (!active.value || !hasScores.value) return []
+  return data.scoreSeries(model.value!, zone.value!, {
+    phase: rowFilter.value.phase,
+    from: xDomain.value?.[0] ?? null,
+    to: xDomain.value?.[1] ?? null,
+    maxPoints: 2000
+  }).map((p) => {
+    const key = `score_${model.value}_z${zone.value}`
+    const v = p[key]
+    return { x: p.x, score: v != null && Number.isFinite(v) ? v : null }
+  })
+})
 
-const hasContinuousScore = computed(() => kind.value === 'points' && lineData.value.length > 0)
-const hasEventScore = computed(() => kind.value === 'events' && eventScoreData.value.length > 0)
-const hasAnyScore = computed(() => hasContinuousScore.value || hasEventScore.value)
+const events = computed<FurnaceEvent[]>(() => {
+  if (!active.value) return []
+  return data.eventsFor(model.value!, zone.value!, { phase: rowFilter.value.phase })
+})
 
-const xDomain = computed<[number, number] | undefined>(() => zoomDomain.value ?? undefined)
+const x = (d: ScoreRow) => d.x
+const y = (d: ScoreRow) => d.score ?? null
+const yFill = (d: ScoreRow) => (d.score != null ? Math.max(d.score, threshold.value) : null)
 
-function xTickFormat(value: number): string {
-  return Number.isFinite(value) ? format(new Date(value), 'HH:mm:ss') : ''
+function xTickFormat(v: number): string {
+  return Number.isFinite(v) ? formatClock(v) : ''
+}
+
+const xDomainProp = computed<[number, number] | undefined>(() => xDomain.value ?? undefined)
+const scaleByDomain = computed(() => xDomain.value != null)
+
+function bandColor(event: FurnaceEvent): string {
+  return event.id === selectedEventId.value
+    ? 'color-mix(in oklch, var(--ui-error) 30%, transparent)'
+    : 'color-mix(in oklch, var(--ui-error) 12%, transparent)'
+}
+
+function onBandClick(event: FurnaceEvent) {
+  if (selectedEventId.value === event.id) reset()
+  else selectEvent(event)
+}
+
+function crosshairTemplate(d: ScoreRow): string {
+  return `<div style="display:flex;flex-direction:column;gap:.15rem">
+    <div style="font-weight:600">${formatClock(d.x)}</div>
+    <div>Score: ${d.score != null ? formatNumber(d.score) : '–'}</div>
+  </div>`
 }
 </script>
 
 <template>
-  <UCard ref="cardRef" :ui="{ root: 'overflow-visible', body: 'px-0! pt-0! pb-3!' }">
+  <UCard v-if="active" ref="cardRef" :ui="{ root: 'overflow-visible', body: 'p-0!' }">
     <template #header>
-      <p class="font-semibold text-highlighted">
-        Anomaly Score
-      </p>
+      <div class="flex items-center justify-between gap-2">
+        <p class="font-semibold text-highlighted">
+          Anomalie-Score
+        </p>
+        <UButton
+          v-if="isZoomed"
+          label="Zoom zurücksetzen"
+          icon="i-lucide-zoom-out"
+          size="xs"
+          color="neutral"
+          variant="ghost"
+          @click="reset"
+        />
+      </div>
     </template>
 
-    <div v-if="!hasAnyScore" class="flex h-72 items-center justify-center px-6 text-center text-sm text-muted">
-      Upload an anomaly results CSV to see the score over time.
+    <div class="h-56 px-2 pt-2">
+      <VisXYContainer
+        v-if="hasScores"
+        :data="scoreData"
+        :x-domain="xDomainProp"
+        :y-domain="[0, 1]"
+        :scale-by-domain="scaleByDomain"
+        :width="width"
+        :margin="{ left: 8, right: 8, top: 8 }"
+      >
+        <VisPlotband
+          v-for="event in events"
+          :key="event.id"
+          axis="x"
+          :from="event.start"
+          :to="event.end"
+          :color="bandColor(event)"
+          :events="{ [VisPlotbandSelectors.plotband]: { click: () => onBandClick(event) } }"
+        />
+        <VisArea
+          :x="x"
+          :y="yFill"
+          :baseline="() => threshold"
+          color="var(--ui-error)"
+          :opacity="0.16"
+        />
+        <VisLine
+          :x="x"
+          :y="y"
+          color="var(--ui-primary)"
+          :line-width="1.5"
+        />
+        <VisPlotline
+          axis="y"
+          :value="threshold"
+          color="var(--ui-error)"
+          :line-width="1"
+          :line-style="[4, 3]"
+        />
+        <VisAxis type="x" :tick-format="xTickFormat" :num-ticks="6" />
+        <VisAxis type="y" :tick-format="(t: number) => formatNumber(t)" :num-ticks="3" />
+        <VisCrosshair :template="crosshairTemplate" color="var(--ui-primary)" />
+        <VisTooltip />
+      </VisXYContainer>
+
+      <VisXYContainer
+        v-else
+        :data="[]"
+        :x-domain="xDomainProp ?? (data.timeRange.value ?? undefined)"
+        :width="width"
+        :margin="{ left: 8, right: 8, top: 8 }"
+      >
+        <VisPlotband
+          v-for="event in events"
+          :key="event.id"
+          axis="x"
+          :from="event.start"
+          :to="event.end"
+          :color="bandColor(event)"
+          :events="{ [VisPlotbandSelectors.plotband]: { click: () => onBandClick(event) } }"
+        />
+        <VisAxis type="x" :tick-format="xTickFormat" :num-ticks="6" />
+      </VisXYContainer>
     </div>
 
-    <VisXYContainer
-      v-else-if="hasContinuousScore"
-      :data="lineData"
-      :x-domain="xDomain"
-      :padding="{ top: 20 }"
-      :margin="{ left: -5, right: -5 }"
-      class="h-72"
-      :width="width"
-    >
-      <VisLine :x="(d: ScoreRow) => d.time" :y="(d: ScoreRow) => d.score" color="var(--ui-primary)" />
-      <VisAxis type="x" :x="(d: ScoreRow) => d.time" :tick-format="xTickFormat" />
-      <VisAxis type="y" />
-      <VisCrosshair color="var(--ui-primary)" />
-      <VisTooltip />
-    </VisXYContainer>
-
-    <VisXYContainer
-      v-else
-      :data="eventScoreData"
-      :x-domain="xDomain"
-      :padding="{ top: 20 }"
-      :margin="{ left: -5, right: -5 }"
-      class="h-72"
-      :width="width"
-    >
-      <VisScatter :x="(d: ScoreRow) => d.time" :y="(d: ScoreRow) => d.score" color="var(--ui-primary)" />
-      <VisAxis type="x" :x="(d: ScoreRow) => d.time" :tick-format="xTickFormat" />
-      <VisAxis type="y" />
-      <VisTooltip />
-    </VisXYContainer>
+    <p v-if="!hasScores" class="px-4 pb-3 text-xs text-muted">
+      Nur Flag-Ergebnisse vorhanden — anomale Zeitbereiche als Band.
+    </p>
   </UCard>
 </template>
 
@@ -80,13 +162,15 @@ function xTickFormat(value: number): string {
 .unovis-xy-container {
   --vis-crosshair-line-stroke-color: var(--ui-primary);
   --vis-crosshair-circle-stroke-color: var(--ui-bg);
-
   --vis-axis-grid-color: var(--ui-border);
   --vis-axis-tick-color: var(--ui-border);
   --vis-axis-tick-label-color: var(--ui-text-dimmed);
-
   --vis-tooltip-background-color: var(--ui-bg);
   --vis-tooltip-border-color: var(--ui-border);
   --vis-tooltip-text-color: var(--ui-text-highlighted);
+}
+
+:deep(.unovis-plotband) {
+  cursor: pointer;
 }
 </style>
