@@ -4,80 +4,36 @@ Ein Web-Dashboard, in das man **eine** aufbereitete CSV eines Sechs-Zonen-Stoßo
 lädt. Es zeigt den Zeitverlauf der Prozesssignale einer Zone und — sobald die CSV
 Modellergebnisse enthält — wo ein Anomalieerkennungsmodell angeschlagen hat.
 
+![Dashboard Bild](./ML_Dashboard.webp)   
 ---
 
 ## Starten
 
-Wer noch nie mit so einem Projekt gearbeitet hat — Schritt für Schritt:
+Online Versionen:
+- [Dashboard->](https://ml-dashboard.laschober.eu/)
+- [Beispiel Datei zm Download (einfach danach im Leeren Dashboard uploaden) ->](https://ml-dashboard.laschober.eu/sample-data/furnace_dashboard_demo_full.csv)
 
-### 1. Node.js installieren (einmalig, pro Rechner)
 
-Auf [nodejs.org](https://nodejs.org) die **LTS-Version** herunterladen und den
-Installer durchklicken. Damit kommt automatisch der Befehl `npm` mit — mehr wird
-nicht gebraucht.
+Oder Lokal starten:
 
-Zum Prüfen ein Terminal öffnen und eingeben:
-
-```bash
-node --version
-```
-
-Kommt eine Zahl wie `v20.x` oder höher zurück, passt es. (Kommt „command not
-found" / „wird nicht erkannt", das Terminal einmal schließen und neu öffnen.)
-
-> **Terminal öffnen:** Am einfachsten in **VS Code** den Projektordner öffnen
-> (*Datei → Ordner öffnen*) und dann *Terminal → Neues Terminal*. Das Terminal
-> steht dann schon im richtigen Ordner.
-
-### 2. Abhängigkeiten holen (einmalig, und nach `git pull`)
-
-Im Projektordner (der mit der `package.json` darin):
+**Einmalig:** [Node.js](https://nodejs.org) (LTS-Version) installieren — dann im Projektordner:
 
 ```bash
 npm install
-```
-
-Das lädt alle benötigten Pakete in den Ordner `node_modules/` (dauert ein, zwei
-Minuten). **Gelbe `npm warn`-Zeilen** dabei sind normal und können ignoriert
-werden — auch die über „install scripts blocked".
-
-### 3. Dashboard starten
-
-```bash
 npm run dev
 ```
 
-Kurz warten, bis im Terminal so etwas steht:
-
-```
-  ➜ Local:    http://localhost:3000/
-```
-
-Diese Adresse im Browser öffnen — fertig. Solange das Terminal läuft, wird jede
-gespeicherte Code-Änderung automatisch im Browser übernommen.
-
-**Beenden:** im Terminal `Strg + C` (Mac: `Ctrl + C`) drücken.
-**Nächstes Mal:** es reicht `npm run dev` — `npm install` nur wiederholen, wenn
-sich die Abhängigkeiten geändert haben (z. B. nach einem `git pull`).
-
-### Wenn etwas klemmt
-
-| Meldung / Problem | Lösung |
-|---|---|
-| `npm` wird nicht gefunden | Node.js installieren (Schritt 1), Terminal neu öffnen |
-| `Port 3000 is already in use` | Nuxt nimmt automatisch den nächsten freien Port — die tatsächlich angezeigte Adresse verwenden |
-| Fehler direkt nach `git pull` | nochmal `npm install` |
-| sonst nichts geht mehr | Ordner `node_modules/` löschen, `npm install` neu |
+Wenn im Terminal `http://localhost:3000/` steht, diese Adresse im Browser öffnen.
 
 ### Eine CSV laden
 
-Oben rechts in der Leiste auf **„CSV importieren"** klicken und eine Datei
+Oben rechts, oder in der Mitte oder in der Sidebar auf **„CSV importieren"** klicken (solange noch keine geladen ist) und eine Datei
 auswählen (oder ins Feld ziehen). Die Datei bleibt nach einem Reload erhalten
 (im Browser gespeichert), bis man sie über denselben Dialog wieder entfernt.
 
 Zum Ausprobieren ohne echte Daten gibt es fertige Beispiele. Sie liegen im Ordner
 `sample-data/` **und** werden vom laufenden Dashboard mit ausgeliefert — also auch
-im Docker-Container — unter `http://localhost:3000/sample-data/<datei>`:
+im Docker-Container — unter `http://<adress>/sample-data/<datei>`:
 
 | Datei | Modus / Inhalt |
 |---|---|
@@ -92,6 +48,33 @@ hochladen.
 
 Alle `score_*`/`flag_*`-Werte in diesen Dateien sind **synthetisch** (erzeugt von
 `sample-data/make_analysis_demo.py`), sie ersetzen keine echte Modellausgabe.
+
+---
+
+## Entwickeln & veröffentlichen
+
+Zwei Branches: **`dev`** = Arbeitsstand, **`master`** = live. Ein Merge nach `master`
+published das Dashboard automatisch auf den Server (GitHub Action → Docker).
+
+Einmal klonen (oder GitHub Desktop nutzen — dort machen Buttons dasselbe):
+
+```bash
+git clone <repo-url>
+```
+
+Auf `dev` arbeiten:
+
+```bash
+git checkout dev
+git pull
+git add -A
+git commit -m "kurz was geändert wurde"
+git push
+```
+
+**Veröffentlichen:** auf github.com einen Pull Request `dev` → `main` erstellen und
+mergen. Die Action baut dann automatisch; nach ein paar Minuten ist die neue
+Version unter der Domain online. **Direkte commits auf master branch sind gesperrt**
 
 ---
 
@@ -168,9 +151,6 @@ Ohne die `score_*`/`flag_*`-Spalten ist es dieselbe Datei im Prozessmodus.
 
 ## Aktuelle Features
 
-> Diese Liste ist der aktuelle Funktionsstand. Wer etwas hinzufügt, ändert oder
-> entfernt, passt sie mit an.
-
 - **CSV-Import** oben in der Leiste: Datei-Dialog und Drag & Drop, Fortschrittsbalken,
   große Dateien werden stückweise eingelesen (ab ~800 000 Zeilen gleichmäßig
   ausgedünnt), Datei bleibt über Reloads erhalten.
@@ -239,7 +219,7 @@ direkt laden. Das Skript macht daraus eine Dashboard-CSV:
 
 ```bash
 python3 scripts/prepare_dashboard_data.py <rohexport>.txt -o furnace_dashboard.csv
-python3 scripts/prepare_dashboard_data.py --help      # alle Optionen
+python3 scripts/prepare_dashboard_data.py --help 
 ```
 
 Nur Python-Standardbibliothek, kein pandas nötig. Für sehr große Exporte
@@ -249,7 +229,7 @@ Nur Python-Standardbibliothek, kein pandas nötig. Für sehr große Exporte
 des Analysemodus, keine echte Modellausgabe):
 
 ```bash
-python3 sample-data/make_analysis_demo.py <eingabe>.csv -o <ausgabe>.csv          # alle drei Modelle
+python3 sample-data/make_analysis_demo.py <eingabe>.csv -o <ausgabe>.csv
 python3 sample-data/make_analysis_demo.py <eingabe>.csv -o <ausgabe>.csv -m iforest
 ```
 
