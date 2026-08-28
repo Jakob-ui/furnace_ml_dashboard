@@ -72,9 +72,11 @@ git commit -m "kurz was geändert wurde"
 git push
 ```
 
-**Veröffentlichen:** auf github.com einen Pull Request `dev` → `main` erstellen und
-mergen. Die Action baut dann automatisch; nach ein paar Minuten ist die neue
-Version unter der Domain online. **Direkte commits auf master branch sind gesperrt**
+**Veröffentlichen:** auf github.com einen Pull Request `dev` → `master` erstellen.
+Ein Check baut zuerst das Docker-Image (`.github/workflows/pr-check.yml`) — erst wenn
+der grün ist, lässt sich mergen. Nach dem Merge deployt die Action automatisch; nach
+ein paar Minuten ist die neue Version unter der Domain online.
+**Direkte Commits auf `master` sind gesperrt.**
 
 ---
 
