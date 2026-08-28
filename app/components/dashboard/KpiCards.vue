@@ -2,11 +2,12 @@
 import useFurnaceData from '~/composables/useFurnaceData'
 import { formatDuration, formatInteger, formatPercent } from '~/utils/format'
 
-const { isAnalysis, kpis } = useFurnaceData()
+const { isAnalysis, kpis, zones } = useFurnaceData()
 const { model, zone, rowFilter } = useFurnaceSelection()
 
 const stats = computed(() => {
   if (!isAnalysis.value || model.value == null || zone.value == null) return null
+  if (!zones.value.includes(zone.value)) return null
   return kpis(model.value, zone.value, rowFilter.value)
 })
 

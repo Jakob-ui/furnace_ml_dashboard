@@ -1,15 +1,11 @@
 <script setup lang="ts">
-import { VisAxis, VisBrush, VisCrosshair, VisLine, VisPlotband, VisPlotbandSelectors, VisTooltip, VisXYContainer } from '@unovis/vue'
-import { Position } from '@unovis/ts'
+import { VisAxis, VisCrosshair, VisLine, VisPlotband, VisPlotbandSelectors, VisTooltip, VisXYContainer } from '@unovis/vue'
 import useFurnaceData, { type FurnaceEvent } from '~/composables/useFurnaceData'
 import { PHASE_LABELS } from '~/composables/useFurnaceData'
 import { resolveSignal, signalColor } from '~/utils/signals'
-import { formatClock, formatNumber } from '~/utils/format'
+import { formatClock, formatDateTime, formatNumber, formatRange } from '~/utils/format'
 
 type ChartRow = { x: number } & Record<string, number | null>
-
-const cardRef = useTemplateRef<HTMLElement | null>('cardRef')
-const { width } = useElementSize(cardRef)
 
 const data = useFurnaceData()
 const { isAnalysis } = data
@@ -37,7 +33,7 @@ function toggleKey(key: string) {
 
 const visibleKeys = computed(() => selectedKeys.value.filter(k => !hiddenKeys.value.has(k)))
 
-// ---- Einheitengruppen -------------------------------------------------- //
+// ---- Einheitengruppen: je Einheit ein eigenes Panel ------------------- //
 
 const unitOrder = computed<string[]>(() => {
   const counts = new Map<string, number>()
@@ -48,25 +44,20 @@ const unitOrder = computed<string[]>(() => {
   return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([unit]) => unit)
 })
 
-const leftUnit = computed(() => unitOrder.value[0] ?? null)
-const rightUnit = computed(() => unitOrder.value[1] ?? null)
-const droppedUnits = computed(() => unitOrder.value.slice(2))
-
-function keysForUnit(unit: string | null, keys: string[]): string[] {
-  if (!unit) return []
+function keysForUnit(unit: string, keys: string[]): string[] {
   return keys.filter(k => (resolveSignal(k).unit || '—') === unit)
 }
-
-const leftKeys = computed(() => keysForUnit(leftUnit.value, visibleKeys.value))
-const rightKeys = computed(() => keysForUnit(rightUnit.value, visibleKeys.value))
-
-const unitHint = computed(() => {
-  if (!droppedUnits.value.length) return null
-  const shown = [leftUnit.value, rightUnit.value].filter(Boolean).join(' und ')
-  const hidden = droppedUnits.value.join(', ')
-  const count = unitOrder.value.length
-  return `${count} Einheiten ausgewählt — ${shown} werden dargestellt, ${hidden} nicht.`
-})
+function visibleKeysForUnit(unit: string): string[] {
+  return keysForUnit(unit, visibleKeys.value)
+}
+function unitLabel(unit: string): string {
+  return unit === '—' ? '' : unit
+}
+function panelHeightClass(index: number): string {
+  const n = unitOrder.value.length
+  if (n === 1) return 'h-[320px]'
+  return index === n - 1 ? 'h-[236px]' : 'h-[172px]'
+}
 
 // ---- Daten ----------------------------------------------------------- //
 
@@ -95,16 +86,34 @@ const chartData = computed<ChartRow[]>(() => {
   })
 })
 
-// Übersichtsleiste: volle Zeitachse (nur Phasenfilter), eine Referenzlinie.
-const overviewData = computed<ChartRow[]>(() => {
-  const key = selectedKeys.value[0]
-  if (!key) return []
-  return data.series([key], { phase: rowFilter.value.phase, maxPoints: 600 }).map(p => ({
-    x: p.x,
-    [key]: p[key] != null && Number.isFinite(p[key]) ? p[key] : null
-  }))
+// ---- Zeitausschnitt / Zoom ---------------------------------------- //
+
+const fullDomain = computed<[number, number]>(() => data.timeRange.value ?? [0, 1])
+const zoomStep = computed(() =>
+  Math.max(1000, Math.round((fullDomain.value[1] - fullDomain.value[0]) / 500))
+)
+
+const zoomRange = ref<number[]>([...fullDomain.value])
+watch([xDomain, fullDomain], () => {
+  zoomRange.value = xDomain.value ? [...xDomain.value] : [...fullDomain.value]
+}, { immediate: true })
+
+function applyZoom() {
+  const [a, b] = zoomRange.value as [number, number]
+  if (b - a < zoomStep.value) {
+    // Zu schmal — auf gültigen Bereich zurücksetzen.
+    zoomRange.value = xDomain.value ? [...xDomain.value] : [...fullDomain.value]
+    return
+  }
+  if (a <= fullDomain.value[0] && b >= fullDomain.value[1]) reset()
+  else setDomain([a, b])
+}
+
+const zoomLabel = computed(() => {
+  const [a, b] = zoomRange.value as [number, number]
+  if (a <= fullDomain.value[0] && b >= fullDomain.value[1]) return 'Gesamter Zeitraum'
+  return formatRange(a, b)
 })
-const overviewKey = computed(() => selectedKeys.value[0] ?? null)
 
 // ---- Ereignisbänder ------------------------------------------------- //
 
@@ -141,8 +150,9 @@ function xTickFormat(value: number): string {
 const scaleByDomain = computed(() => xDomain.value != null)
 const xDomainProp = computed<[number, number] | undefined>(() => xDomain.value ?? undefined)
 
-function crosshairTemplate(d: ChartRow): string {
-  const rows = visibleKeys.value.map((key) => {
+function buildCrosshair(d: ChartRow | undefined, keys: string[]): string {
+  if (!d) return ''
+  const rows = keys.map((key) => {
     const sig = resolveSignal(key)
     const value = d[key]
     const valueText = value != null ? `${formatNumber(value)}${sig.unit ? ` ${sig.unit}` : ''}` : '–'
@@ -157,53 +167,80 @@ function crosshairTemplate(d: ChartRow): string {
   </div>`
 }
 
-// ---- Brush --------------------------------------------------------- //
-
-function onBrushEnd(selection: [number, number] | undefined) {
-  if (!selection) return
-  const [a, b] = selection
-  if (Math.abs(b - a) < 1000) return
-  setDomain([a, b])
+// Stabile Accessor-/Template-Funktionen je Einheit. Neu berechnet nur, wenn sich
+// Einheiten oder sichtbare Signale ändern — nicht bei jedem Daten-Update. Sonst
+// baut Unovis das Crosshair bei jedem Hover neu auf und der Strich „klebt".
+interface CrosshairFns {
+  ys: ((d: ChartRow) => number | null)[]
+  color: (d: ChartRow, i: number) => string
+  template: (d: ChartRow | undefined) => string
+}
+const crosshairByUnit = computed(() => {
+  const map = new Map<string, CrosshairFns>()
+  for (const unit of unitOrder.value) {
+    const keys = visibleKeysForUnit(unit)
+    map.set(unit, {
+      ys: keys.map(k => yFor(k)),
+      color: (_d: ChartRow, i: number) => signalColor(keys[i] ?? ''),
+      template: (d: ChartRow | undefined) => buildCrosshair(d, keys)
+    })
+  }
+  return map
+})
+function crosshairFor(unit: string): CrosshairFns | undefined {
+  return crosshairByUnit.value.get(unit)
 }
 
 // ---- Leerzustände ------------------------------------------------- //
 
+const zoneInDataset = computed(() =>
+  zone.value == null || data.zones.value.includes(zone.value)
+)
 const hasSelection = computed(() => selectedKeys.value.length > 0)
 const noRowsForPhase = computed(() =>
   hasSelection.value && phase.value !== 'all' && chartData.value.length === 0
 )
 
-const panelHeightClass = computed(() =>
+const emptyHeightClass = computed(() =>
   isAnalysis.value ? 'h-[380px]' : 'h-[60vh] min-h-[380px]'
 )
 </script>
 
 <template>
-  <UCard ref="cardRef" :ui="{ root: 'overflow-visible', body: 'p-0!' }">
+  <UCard :ui="{ root: 'overflow-visible', body: 'p-0!' }">
     <template #header>
-      <div class="flex items-center justify-between gap-2">
-        <p class="font-semibold text-highlighted">
-          Temperaturverlauf
-        </p>
-        <UButton
-          v-if="isZoomed"
-          label="Zoom zurücksetzen"
-          icon="i-lucide-zoom-out"
-          size="xs"
-          color="neutral"
-          variant="ghost"
-          @click="reset"
-        />
-      </div>
+      <p class="font-semibold text-highlighted">
+        Temperaturverlauf
+      </p>
     </template>
 
     <UEmpty
-      v-if="!hasSelection"
+      v-if="!zoneInDataset"
+      variant="naked"
+      icon="i-lucide-flame-kindling"
+      :title="`Zone ${zone} ist nicht im Datensatz enthalten`"
+      description="Diese CSV enthält keine Spalten für diese Zone."
+      :class="emptyHeightClass"
+    >
+      <template v-if="data.zones.value.length" #actions>
+        <UButton
+          v-for="z in data.zones.value"
+          :key="z"
+          :label="`Zu Zone ${z}`"
+          color="neutral"
+          variant="subtle"
+          @click="zone = z"
+        />
+      </template>
+    </UEmpty>
+
+    <UEmpty
+      v-else-if="!hasSelection"
       variant="naked"
       icon="i-lucide-line-chart"
       title="Kein Signal gewählt"
       description="Wähle links ein oder mehrere Signale aus."
-      :class="panelHeightClass"
+      :class="emptyHeightClass"
     >
       <template #actions>
         <UButton
@@ -221,7 +258,7 @@ const panelHeightClass = computed(() =>
       icon="i-lucide-filter-x"
       :title="`Keine Zeilen der Phase ${PHASE_LABELS[phase as keyof typeof PHASE_LABELS]}`"
       description="Der Datensatz enthält für diese Phase keine Messwerte."
-      :class="panelHeightClass"
+      :class="emptyHeightClass"
     >
       <template #actions>
         <UButton
@@ -234,114 +271,121 @@ const panelHeightClass = computed(() =>
     </UEmpty>
 
     <template v-else>
-      <p v-if="unitHint" class="px-4 pt-3 text-xs text-muted">
-        {{ unitHint }}
-      </p>
-
-      <div class="relative px-2 pt-2" :class="panelHeightClass">
-        <VisXYContainer
-          :data="chartData"
-          :x-domain="xDomainProp"
-          :scale-by-domain="scaleByDomain"
-          :width="width"
-          :margin="{ left: 8, right: rightKeys.length ? 8 : 4, top: 8 }"
-          class="absolute inset-0 px-2"
+      <!-- Je Einheit ein eigenes Panel, alle mit derselben Zeitachse -->
+      <div class="divide-y divide-default">
+        <div
+          v-for="(unit, i) in unitOrder"
+          :key="unit"
+          class="px-4 pt-2"
+          :class="i === unitOrder.length - 1 ? 'pb-3' : 'pb-1'"
         >
-          <VisPlotband
-            v-for="event in events"
-            :key="event.id"
-            :axis="'x'"
-            :from="event.start"
-            :to="event.end"
-            :color="bandColor(event)"
-            :events="{ [VisPlotbandSelectors.plotband]: { click: () => onBandClick(event) } }"
-          />
-
-          <VisLine
-            v-for="key in leftKeys"
-            :key="key"
-            :x="x"
-            :y="yFor(key)"
-            :color="signalColor(key)"
-            :line-dash-array="dashFor(key)"
-            :line-width="dashFor(key) ? 1.25 : 1.75"
-          />
-
-          <VisAxis type="x" :tick-format="xTickFormat" :num-ticks="6" />
-          <VisAxis type="y" :label="leftUnit ?? ''" :tick-format="(t: number) => formatNumber(t)" />
-
-          <VisCrosshair :template="crosshairTemplate" :color="(_: ChartRow, i: number) => signalColor(visibleKeys[i] ?? '')" />
-          <VisTooltip />
-        </VisXYContainer>
-
-        <VisXYContainer
-          v-if="rightKeys.length"
-          :data="chartData"
-          :x-domain="xDomainProp"
-          :scale-by-domain="scaleByDomain"
-          :width="width"
-          :margin="{ left: 8, right: 8, top: 8 }"
-          class="pointer-events-none absolute inset-0 px-2"
-        >
-          <VisLine
-            v-for="key in rightKeys"
-            :key="key"
-            :x="x"
-            :y="yFor(key)"
-            :color="signalColor(key)"
-            :line-dash-array="dashFor(key)"
-            :line-width="dashFor(key) ? 1.25 : 1.75"
-          />
-          <VisAxis
-            type="y"
-            :position="Position.Right"
-            :label="rightUnit ?? ''"
-            :grid-line="false"
-            :tick-format="(t: number) => formatNumber(t)"
-          />
-        </VisXYContainer>
+          <VisXYContainer
+            :data="chartData"
+            :x-domain="xDomainProp"
+            :scale-by-domain="scaleByDomain"
+            :duration="0"
+            :auto-margin="false"
+            :margin="{ left: 56, right: 14, top: 8, bottom: i === unitOrder.length - 1 ? 26 : 6 }"
+            :class="[panelHeightClass(i), 'w-full']"
+          >
+            <VisPlotband
+              v-for="event in events"
+              :key="event.id"
+              axis="x"
+              :from="event.start"
+              :to="event.end"
+              :color="bandColor(event)"
+              :events="{ [VisPlotbandSelectors.plotband]: { click: () => onBandClick(event) } }"
+            />
+            <VisLine
+              v-for="key in visibleKeysForUnit(unit)"
+              :key="key"
+              :x="x"
+              :y="yFor(key)"
+              :color="signalColor(key)"
+              :line-dash-array="dashFor(key)"
+              :line-width="dashFor(key) ? 1.25 : 1.75"
+            />
+            <VisAxis
+              type="y"
+              :label="unitLabel(unit)"
+              :num-ticks="4"
+              :tick-format="(t: number) => formatNumber(t)"
+            />
+            <VisAxis
+              v-if="i === unitOrder.length - 1"
+              type="x"
+              :tick-format="xTickFormat"
+              :num-ticks="6"
+            />
+            <VisCrosshair
+              :data="chartData"
+              :x="x"
+              :y="crosshairFor(unit)?.ys"
+              :template="crosshairFor(unit)?.template"
+              :color="crosshairFor(unit)?.color"
+              :visibilityThreshold="0"
+            />
+            <VisTooltip />
+          </VisXYContainer>
+        </div>
       </div>
 
-      <div class="h-14 px-2">
-        <VisXYContainer
-          :data="overviewData"
-          :width="width"
-          :height="56"
-          :margin="{ left: 8, right: 8 }"
-        >
-          <VisLine
-            v-if="overviewKey"
-            :x="x"
-            :y="yFor(overviewKey)"
-            color="var(--ui-text-dimmed)"
-            :line-width="1"
-          />
-          <VisBrush
-            :selection="xDomain"
-            :on-brush-end="onBrushEnd"
-            :draggable="true"
-            :selection-min-length="1000"
-          />
-          <VisAxis type="x" :tick-format="xTickFormat" :num-ticks="4" />
-        </VisXYContainer>
+      <div class="flex flex-col gap-2 border-t border-default bg-elevated/30 px-4 py-3 print:hidden">
+        <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+          <div class="flex items-center gap-1.5 text-sm">
+            <UIcon name="i-lucide-scan-search" class="size-4 shrink-0 text-dimmed" />
+            <span class="font-medium text-highlighted">Zeitausschnitt</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <span class="text-sm font-medium text-highlighted tabular-nums">{{ zoomLabel }}</span>
+            <UButton
+              label="Zurücksetzen"
+              icon="i-lucide-zoom-out"
+              size="xs"
+              color="neutral"
+              variant="subtle"
+              :disabled="!isZoomed"
+              @click="reset"
+            />
+          </div>
+        </div>
+        <USlider
+          v-model="zoomRange"
+          :min="fullDomain[0]"
+          :max="fullDomain[1]"
+          :step="zoomStep"
+          :min-steps-between-thumbs="1"
+          size="sm"
+          class="w-full"
+          @change="applyZoom"
+        />
+        <div class="flex justify-between text-xs text-muted tabular-nums">
+          <span>{{ formatDateTime(fullDomain[0]) }}</span>
+          <span>{{ formatDateTime(fullDomain[1]) }}</span>
+        </div>
       </div>
 
-      <div class="flex flex-wrap gap-x-4 gap-y-1.5 px-4 pt-1 pb-3">
-        <button
+      <div class="flex flex-wrap gap-1.5 px-4 py-3">
+        <UButton
           v-for="key in selectedKeys"
           :key="key"
-          type="button"
-          class="flex items-center gap-1.5 text-xs transition-opacity"
-          :class="hiddenKeys.has(key) ? 'opacity-40' : ''"
+          size="xs"
+          color="neutral"
+          :variant="hiddenKeys.has(key) ? 'ghost' : 'soft'"
           @click="toggleKey(key)"
         >
-          <span
-            class="h-2 w-2 rounded-full"
-            :style="{ backgroundColor: signalColor(key), outline: resolveSignal(key).role === 'sp' ? `1px dashed ${signalColor(key)}` : 'none', outlineOffset: '1px' }"
-          />
-          <span class="text-highlighted">{{ resolveSignal(key).label }}</span>
+          <template #leading>
+            <span
+              class="size-2 rounded-full"
+              :style="{ backgroundColor: signalColor(key), outline: resolveSignal(key).role === 'sp' ? `1px dashed ${signalColor(key)}` : 'none', outlineOffset: '1px' }"
+            />
+          </template>
+          <span :class="hiddenKeys.has(key) ? 'text-dimmed line-through' : 'text-highlighted'">
+            {{ resolveSignal(key).label }}
+          </span>
           <span v-if="resolveSignal(key).unit" class="text-dimmed">{{ resolveSignal(key).unit }}</span>
-        </button>
+        </UButton>
       </div>
     </template>
   </UCard>

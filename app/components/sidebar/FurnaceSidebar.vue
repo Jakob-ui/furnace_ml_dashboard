@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import useFurnaceData, { MODEL_LABELS, PHASE_LABELS, type PhaseKey } from '~/composables/useFurnaceData'
-import { signalsForZone } from '~/utils/signals'
+import { signalsForZone, ZONES } from '~/utils/signals'
 
 defineProps<{ collapsed?: boolean }>()
 
@@ -13,8 +13,12 @@ const modelItems = computed(() =>
   models.value.map(key => ({ label: MODEL_LABELS[key], value: key }))
 )
 
+// Zone 1–6 sind immer wählbar; ohne Daten in der CSV zeigt der Plot einen Hinweis.
 const zoneItems = computed(() =>
-  zones.value.map(z => ({ label: `Zone ${z}`, value: z }))
+  ZONES.map(z => ({
+    label: zones.value.includes(z) ? `Zone ${z}` : `Zone ${z} · keine Daten`,
+    value: z
+  }))
 )
 
 const PHASE_ORDER: (PhaseKey | 'all')[] = ['all', 'heating', 'hold', 'cooling']
@@ -58,7 +62,6 @@ const zoneProxy = computed({
         <URadioGroup
           v-model="modelProxy"
           :items="modelItems"
-          legend="Modell"
           orientation="vertical"
         />
       </UFormField>

@@ -4,3 +4,42 @@
 :root {
   --ui-radius: 0.375rem;
 }
+
+/* Druckansicht (Claude.md §12): Bedienelemente raus, Panels über volle Breite,
+   Diagrammfarben erhalten. Der aktuelle Filterzustand steht in der Auswahlzeile. */
+@media print {
+  #dashboard-sidebar-default,
+  [aria-controls="dashboard-sidebar-default"] {
+    display: none !important;
+  }
+
+  #dashboard-panel-home,
+  .min-h-svh {
+    min-height: 0 !important;
+  }
+
+  /* Scroll-Container aufbrechen, damit der ganze Inhalt über mehrere Seiten druckt. */
+  #dashboard-panel-home *,
+  .overflow-y-auto,
+  .overflow-auto {
+    overflow: visible !important;
+    max-height: none !important;
+  }
+
+  body {
+    background: #fff !important;
+  }
+
+  .print\:hidden {
+    display: none !important;
+  }
+
+  * {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  @page {
+    margin: 1.5cm;
+  }
+}

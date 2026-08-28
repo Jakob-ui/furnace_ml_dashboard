@@ -98,6 +98,28 @@ export function formatRange(startMs: number, endMs: number): string {
   return `${dateTimeSecFmt.format(start)} – ${dateTimeSecFmt.format(end)}`
 }
 
+function pad(value: number, width = 2): string {
+  return String(value).padStart(width, '0')
+}
+
+/**
+ * Lokaler Zeitstempel `YYYY-MM-DD HH:MM:SS` für den Datenexport — vom CSV-Parser
+ * wieder einlesbar (er ersetzt das Leerzeichen durch `T`).
+ */
+export function formatIsoLocal(ms: number): string {
+  if (!Number.isFinite(ms)) return ''
+  const d = new Date(ms)
+  const date = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  const time = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+  return `${date} ${time}`
+}
+
+/** Kompakter Zeitstempel `YYYYMMDD-HHMM` für Dateinamen. */
+export function formatStamp(ms: number): string {
+  const d = new Date(ms)
+  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`
+}
+
 /** Kurzer Zeitraum ohne Sekunden, für die Datei-Zusammenfassung. */
 export function formatRangeShort(startMs: number, endMs: number): string {
   if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return '–'

@@ -73,8 +73,10 @@ export default function useFurnaceSelection() {
     const next = { ...state.value }
     let changed = false
 
-    if (next.zone == null || !zones.value.includes(next.zone)) {
-      next.zone = zones.value[0] ?? null
+    // Zone 1–6 sind immer erlaubt (Akzeptanzkriterium). Nur ausserhalb des
+    // Bereichs oder ohne Wert auf die erste Zone mit Daten (sonst 1) zurücksetzen.
+    if (next.zone == null || next.zone < 1 || next.zone > 6) {
+      next.zone = zones.value[0] ?? 1
       changed = true
     }
 
@@ -132,10 +134,13 @@ export default function useFurnaceSelection() {
       const prev = state.value.zone
       let signals = state.value.signals
       if (prev != null && value != null && prev !== value) {
-        signals = signals
+        const remapped = signals
           .map(key => key.replace(`z${prev}_`, `z${value}_`))
           .filter(key => availableSignalKeys.value.has(key))
-        if (!signals.length) signals = signalsForKeys(value)
+        const fallback = signalsForKeys(value)
+        // Hat die Zielzone keine Spalten in der Datei, die Auswahl unverändert
+        // lassen — beim Zurückwechseln greift das Remapping dann wieder.
+        signals = remapped.length ? remapped : (fallback.length ? fallback : signals)
       }
       state.value = { ...state.value, zone: value, signals }
       persist()

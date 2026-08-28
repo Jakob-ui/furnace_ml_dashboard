@@ -5,15 +5,17 @@ import { formatClock, formatNumber } from '~/utils/format'
 
 type ScoreRow = { x: number, score: number | null }
 
-const cardRef = useTemplateRef<HTMLElement | null>('cardRef')
-const { width } = useElementSize(cardRef)
-
 const data = useFurnaceData()
-const { isAnalysis, hasScores } = data
+const { isAnalysis, hasScores, zones } = data
 const { model, zone, rowFilter } = useFurnaceSelection()
 const { selectedEventId, xDomain, isZoomed, selectEvent, reset } = useChartInteraction()
 
-const active = computed(() => isAnalysis.value && model.value != null && zone.value != null)
+const active = computed(() =>
+  isAnalysis.value
+  && model.value != null
+  && zone.value != null
+  && zones.value.includes(zone.value)
+)
 
 const threshold = computed(() =>
   active.value ? data.flagThreshold(model.value!, zone.value!) : 0.5
@@ -69,7 +71,7 @@ function crosshairTemplate(d: ScoreRow): string {
 </script>
 
 <template>
-  <UCard v-if="active" ref="cardRef" :ui="{ root: 'overflow-visible', body: 'p-0!' }">
+  <UCard v-if="active" :ui="{ root: 'overflow-visible', body: 'p-0!' }">
     <template #header>
       <div class="flex items-center justify-between gap-2">
         <p class="font-semibold text-highlighted">
@@ -87,15 +89,16 @@ function crosshairTemplate(d: ScoreRow): string {
       </div>
     </template>
 
-    <div class="h-56 px-2 pt-2">
+    <div class="px-4 pt-2 pb-3">
       <VisXYContainer
         v-if="hasScores"
         :data="scoreData"
         :x-domain="xDomainProp"
         :y-domain="[0, 1]"
         :scale-by-domain="scaleByDomain"
-        :width="width"
-        :margin="{ left: 8, right: 8, top: 8 }"
+        :duration="0"
+        :margin="{ left: 8, right: 8, top: 8, bottom: 8 }"
+        class="h-60 w-full"
       >
         <VisPlotband
           v-for="event in events"
@@ -128,7 +131,14 @@ function crosshairTemplate(d: ScoreRow): string {
         />
         <VisAxis type="x" :tick-format="xTickFormat" :num-ticks="6" />
         <VisAxis type="y" :tick-format="(t: number) => formatNumber(t)" :num-ticks="3" />
-        <VisCrosshair :template="crosshairTemplate" color="var(--ui-primary)" />
+        <VisCrosshair
+          :data="scoreData"
+          :x="x"
+          :y="y"
+          :template="crosshairTemplate"
+          color="var(--ui-primary)"
+          :visibilityThreshold="0"
+        />
         <VisTooltip />
       </VisXYContainer>
 
@@ -136,8 +146,9 @@ function crosshairTemplate(d: ScoreRow): string {
         v-else
         :data="[]"
         :x-domain="xDomainProp ?? (data.timeRange.value ?? undefined)"
-        :width="width"
-        :margin="{ left: 8, right: 8, top: 8 }"
+        :duration="0"
+        :margin="{ left: 8, right: 8, top: 8, bottom: 8 }"
+        class="h-60 w-full"
       >
         <VisPlotband
           v-for="event in events"

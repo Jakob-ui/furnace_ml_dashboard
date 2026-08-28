@@ -17,7 +17,7 @@ useHead({
   }
 })
 
-const title = 'Stoßofen-Anomalieanalyse'
+const title = 'Anomalieanalyse'
 const description
   = 'Prozesssignale eines Sechs-Zonen-Stoßofens im Zeitverlauf ansehen und, sobald '
     + 'Modellergebnisse vorliegen, erkannte Anomalien nachvollziehen.'

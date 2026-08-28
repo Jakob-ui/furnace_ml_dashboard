@@ -6,7 +6,6 @@ node_modules
 dist
 npm-debug.log*
 pnpm-debug.log*
-sample-data
 package-lock.json
 .vscode
 .idea

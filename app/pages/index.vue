@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import DatasetImport from '~/components/navbar/DatasetImport.vue'
+import ReportExport from '~/components/navbar/ReportExport.vue'
 import ModeToggle from '~/components/colorMode/modeToggle.vue'
 import SelectionSummary from '~/components/dashboard/SelectionSummary.vue'
 import ModeNotice from '~/components/dashboard/ModeNotice.vue'
@@ -18,6 +19,19 @@ const percent = computed(() => Math.round((progress.value ?? 0) * 100))
 const stageLabel = computed(() =>
   stage.value === 'reading' ? 'Datei wird gelesen' : 'Datensatz wird eingelesen'
 )
+
+// Nur für den Ausdruck: Zeitpunkt der Druckausgabe.
+const printedAt = ref('')
+onMounted(() => {
+  const stamp = () => {
+    printedAt.value = new Intl.DateTimeFormat('de-DE', {
+      dateStyle: 'medium',
+      timeStyle: 'short'
+    }).format(new Date())
+  }
+  window.addEventListener('beforeprint', stamp)
+  onBeforeUnmount(() => window.removeEventListener('beforeprint', stamp))
+})
 </script>
 
 <template>
@@ -25,11 +39,12 @@ const stageLabel = computed(() =>
     <template #header>
       <UDashboardNavbar title="Stoßofen-Anomalieanalyse">
         <template #leading>
-          <UDashboardSidebarCollapse />
+          <UDashboardSidebarCollapse class="print:hidden" />
         </template>
         <template #right>
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-2 print:hidden">
             <DatasetImport />
+            <ReportExport />
             <ModeToggle />
           </div>
         </template>
@@ -77,6 +92,15 @@ const stageLabel = computed(() =>
       </div>
 
       <div v-else-if="ready" class="flex flex-col gap-6">
+        <div class="hidden print:block">
+          <h1 class="text-lg font-semibold text-highlighted">
+            Stoßofen-Anomalieanalyse
+          </h1>
+          <p v-if="printedAt" class="text-sm text-muted">
+            Ausdruck vom {{ printedAt }}
+          </p>
+        </div>
+
         <SelectionSummary />
         <ModeNotice />
         <KpiCards />

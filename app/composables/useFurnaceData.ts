@@ -13,6 +13,7 @@
  * Datei sehen. `shallowRef` für die Rohdaten — keine tiefen reaktiven Kopien.
  */
 import { computed, shallowRef, triggerRef } from 'vue'
+import { formatIsoLocal } from '~/utils/format'
 
 // --------------------------------------------------------------------------- //
 // Typen
@@ -817,6 +818,35 @@ export default function useFurnaceData() {
     return { totalEvents: evs.length, anomalyRatio, anomalySeconds }
   }
 
+  // ---- Export ------------------------------------------------------- //
+
+  /**
+   * Gefilterte Rohzeilen (volle Auflösung, kein LTTB) für den Datenexport.
+   * `time` als lokaler ISO-Zeitstempel, `phase` als Text sofern vorhanden,
+   * danach je gewähltem Signal eine Spalte. Nicht vorhandene Schlüssel entfallen.
+   */
+  function exportTable(keys: string[], filter: RowFilter = {}): {
+    header: string[]
+    rows: (string | number)[][]
+  } {
+    const t = table.value
+    if (!t) return { header: ['time'], rows: [] }
+    const present = keys.filter(key => t.data[key])
+    const withPhase = t.phase != null
+    const idx = selectRows(filter)
+    const header = ['time', ...(withPhase ? ['phase'] : []), ...present]
+    const rows = idx.map((i) => {
+      const row: (string | number)[] = [formatIsoLocal(t.time[i]!)]
+      if (withPhase) row.push(PHASE_BY_CODE[t.phase![i]!] ?? '')
+      for (const key of present) {
+        const v = t.data[key]![i]!
+        row.push(Number.isNaN(v) ? '' : v)
+      }
+      return row
+    })
+    return { header, rows }
+  }
+
   return {
     // Laden
     load,
@@ -856,6 +886,7 @@ export default function useFurnaceData() {
     eventsFor,
     flagThreshold,
     flagBands,
-    kpis
+    kpis,
+    exportTable
   }
 }

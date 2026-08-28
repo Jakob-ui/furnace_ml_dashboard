@@ -1,34 +1,49 @@
 # Beispieldaten
 
-Beide Dateien sind mit `scripts/prepare_dashboard_data.py` aus dem Rohexport der
-Anlage erzeugt. Sie dienen der Entwicklung; die ML-Seite liefert später echte
-Dateien im selben Format (Spaltenvertrag: `Claude.md` §2).
+Dateien zum Ausprobieren des Dashboards ohne echte Anlagendaten. Aufbau der CSV:
+siehe „Das CSV-Format" in der Haupt-[`README.md`](../README.md).
+
+Die ML-Seite liefert später echte Dateien im selben Format.
 
 ## `furnace_dashboard.csv` — Prozessmodus
 
-999 Zeilen, entspricht dem realen Referenzauszug (`../erstentausendDaten.txt`),
-komplett in Phase `hold`. Keine Modellergebnisse → das Dashboard zeigt nur
-Signalauswahl und Zeitverlauf.
+999 Zeilen, realer Referenzauszug, komplett in Phase `hold`. Keine
+Modellergebnisse → das Dashboard zeigt nur Signalauswahl und Zeitverlauf.
 
+## `furnace_dashboard_demo_analyse.csv` — Analysemodus (nur `svm`)
+
+Zone-1-Zyklus 1 (Aufheizen → Halten → Abkühlen), 8100 Zeilen auf 2-s-Raster, mit
+`cycle`/`phase`. Enthält `score_svm_*` / `flag_svm_*` für Zone 1–6.
+
+## `furnace_dashboard_demo_full.csv` — Analysemodus, alle drei Modelle
+
+Dieselben Prozessdaten wie oben, plus `score_*` / `flag_*` für **`svm`,
+`iforest` und `autoencoder`**. Damit lässt sich mit einer Datei die komplette
+Funktionalität durchklicken (Modellauswahl, Score-Panel, KPIs, Events).
+
+## `furnace_dashboard_demo_iforest.csv` / `furnace_dashboard_demo_autoencoder.csv`
+
+Wie `_full`, aber je nur ein Modell — für den Fall „nur ein Modell in der Datei".
+
+---
+
+**Alle `score_*` / `flag_*`-Werte in den Demo-Dateien sind synthetisch** und sagen
+nichts über echtes Anlagenverhalten aus. Erzeugt mit `make_analysis_demo.py`:
+
+```bash
+# alle drei Modelle an eine fertige Dashboard-CSV hängen
+python3 sample-data/make_analysis_demo.py \
+  sample-data/furnace_dashboard_demo_analyse.csv \
+  -o sample-data/furnace_dashboard_demo_full.csv
+
+# nur ein Modell
+python3 sample-data/make_analysis_demo.py <eingabe>.csv -o <ausgabe>.csv -m autoencoder
 ```
-python3 scripts/prepare_dashboard_data.py erstentausendDaten.txt \
-  -o sample-data/furnace_dashboard.csv
-```
 
-## `furnace_dashboard_demo_analyse.csv` — Analysemodus
+Jedes Modell hat einen anderen Charakter (damit man beim Umschalten einen
+Unterschied sieht): `svm` = kurze scharfe Ausschläge (lokale Volatilität),
+`iforest` = breitere Bänder (Abweichung von einer langsamen Basislinie),
+`autoencoder` = mehr Events mittlerer Länge (Volatilität + Änderungsrate).
 
-Zone-1-Zyklus 1 (Aufheizen → Halten → Abkühlen), auf 2-s-Raster reduziert,
-mit `cycle`/`phase` aus der Segmentierungs-CSV der ML-Seite.
-
-**Die `score_svm_*`- / `flag_svm_*`-Spalten sind synthetisch** (`--synth-scores`,
-abgeleitet aus der lokalen Volatilität des Istwerts) und **nur zum Testen von
-KPIs, Score-Panel und Ereignisliste da**. Sie sagen nichts über echtes
-Anlagenverhalten aus und werden durch die echte Modellausgabe ersetzt.
-
-```
-python3 scripts/prepare_dashboard_data.py <rohexport>.txt \
-  -o sample-data/furnace_dashboard_demo_analyse.csv \
-  --cycles <pfad>/cycles_all_zones_times_only.csv \
-  --phase-zone 1 --start 2025-10-10T21:30:00 --end 2025-10-11T02:00:00 \
-  --every 4 --synth-scores svm
-```
+Die Prozessdaten selbst stammen aus `scripts/prepare_dashboard_data.py`
+(Rohexport → Dashboard-CSV), siehe Haupt-README „Daten aufbereiten".

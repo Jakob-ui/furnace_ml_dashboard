@@ -3,7 +3,7 @@ import useFurnaceData, { type FurnaceEvent, PHASE_LABELS } from '~/composables/u
 import { formatDuration, formatNumber, formatRange } from '~/utils/format'
 
 const data = useFurnaceData()
-const { isAnalysis } = data
+const { isAnalysis, zones } = data
 const { model, zone, rowFilter } = useFurnaceSelection()
 const { selectedEventId, selectEvent, reset } = useChartInteraction()
 
@@ -15,7 +15,12 @@ const sortItems = [
   { label: 'nach Score', value: 'score' }
 ]
 
-const active = computed(() => isAnalysis.value && model.value != null && zone.value != null)
+const active = computed(() =>
+  isAnalysis.value
+  && model.value != null
+  && zone.value != null
+  && zones.value.includes(zone.value)
+)
 
 const allEvents = computed<FurnaceEvent[]>(() => {
   if (!active.value) return []
